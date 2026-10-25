@@ -218,3 +218,6 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Local implementation notes, intentionally not versioned.
+/gitvars-implementation-spec.md

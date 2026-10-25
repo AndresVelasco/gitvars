@@ -1,0 +1,3 @@
+include = ["demo/**/*.html"]
+exclude = ["build/**", "dist/**", ".venv/**", "gitvars-implementation-spec.md"]
+exclude_regex = ['(^|/)README\.md$']

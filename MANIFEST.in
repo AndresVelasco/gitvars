@@ -1,2 +1,3 @@
 include .gitvars
 recursive-include demo *.html *.py
+exclude demo/index.html

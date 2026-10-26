@@ -221,3 +221,6 @@ __marimo__/
 
 # Local implementation notes, intentionally not versioned.
 /gitvars-implementation-spec.md
+
+# Generated demo template; the rendered copy is under build/.
+/demo/index.html

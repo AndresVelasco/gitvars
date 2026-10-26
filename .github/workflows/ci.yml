@@ -31,6 +31,7 @@ jobs:
         run: |
           gitvars --version
           python demo/build.py
+          gitvars render demo/index.html --html-escape --output-dir build --force
       - name: Build distributions
         run: |
           python -m pip install build

@@ -17,7 +17,7 @@ connection easier to follow when investigating an issue or understanding a
 deployment.
 
 The same idea works for Terraform resources, application configuration, and
-documentation. The [example page](demo/index.html) uses `gitvars` to fill in its
+documentation. The [example page](https://andresvelasco.github.io/gitvars/) uses `gitvars` to fill in its
 Git metadata at build time.
 
 ## Installation
@@ -236,8 +236,11 @@ is ordinary text: `\__git_commit__` becomes a backslash followed by the SHA.
 Replacement is always one-pass; inserted metadata and escaped tokens are never
 processed again during that invocation.
 
-Values are inserted verbatim. Template authors are responsible for quoting and
-escaping them for SQL, YAML, HTML, or other output formats.
+Values are inserted verbatim by default. Use `--html-escape` with `render` or
+`check` to encode inserted values for HTML text and quoted attributes, including
+`&`, `<`, `>`, and quotes. Template text and literal placeholders stay unchanged.
+This is separate from backslash placeholder escaping. Template authors remain
+responsible for quoting and escaping values for other output formats.
 
 ## Repository URLs
 
@@ -284,19 +287,47 @@ routine logging. Dry-run diffs and errors remain visible with `--quiet`.
 ```sh
 python -m pip install -e '.[demo]'
 python -m unittest discover -s tests -v
-python demo/build.py
 ```
 
-The build reads this README and generates `build/demo/index.html` with the same
-content, adding a live variable table immediately after the introduction. Its
-three columns show the literal variable, its replaced value, and its explanation.
-The table uses gitvars' renderer and one Git snapshot; file permalinks refer to
-the README. Values are escaped for HTML, preserving names and multiline commit
-messages as text. The resulting page is static and opens directly in a browser.
+To build and preview the page locally:
 
-The optional `demo` dependencies are needed only to convert Markdown to HTML;
-the gitvars CLI itself still has no runtime dependencies. The Pages workflow
-builds from a fresh checkout and uploads `build/demo/`.
+```sh
+uv run --extra demo python demo/build.py
+uv run gitvars render demo/index.html --html-escape --output-dir build --force
+```
+
+| Path | Purpose |
+| --- | --- |
+| `README.md` | Page content, maintained in Markdown. |
+| `demo/layout.html` | Tracked HTML layout and styles. |
+| `demo/index.html` | Generated HTML with Git placeholders intact; ignored by Git. |
+| `build/demo/index.html` | Final rendered page with actual Git values; ignored by Git. Open this file in your browser. |
+
+`demo/build.py` only combines the README and layout into `demo/index.html`,
+leaving the Git placeholders intact. The separate `gitvars render` command
+replaces them in a copy at `build/demo/index.html`, preserving the input path
+under `build/`. `--force` clears an existing `build/` directory before rendering.
+Neither generated HTML file is committed. Run both commands again after editing
+the README or layout. CI uses the same two steps on pushes and pull requests.
+
+The table is inserted immediately after the introduction. Its three columns show
+the literal variable, its replaced value, and its explanation. README examples
+stay literal; only the table's value cells are substituted. Values are escaped
+for HTML, including multiline commit messages. The file URL cell is empty
+because the generated input is absent from `HEAD`; the commit URL still links
+to the source revision. Both commands run once and exit. The optional `demo`
+dependencies are needed only to convert the README to HTML; the gitvars CLI
+itself still has no runtime dependencies.
+
+### GitHub Pages output
+
+On a push to `main`, the Pages workflow first runs `demo/build.py`, then invokes
+`gitvars render` to produce `build/demo/index.html`. It uploads **`build/demo/` as the
+Pages artifact**. That directory becomes the website root, so its `index.html`
+is the homepage. With the default project-site URL, it appears at
+[https://andresvelasco.github.io/gitvars/](https://andresvelasco.github.io/gitvars/),
+without `build/demo/` in the URL. The workflow can also be run manually.
+
 Select **GitHub Actions** as the repository's Pages publishing source to enable
 deployment, following the [GitHub Pages workflow documentation](https://docs.github.com/en/pages/getting-started-with-github-pages/using-custom-workflows-with-github-pages).
 Generated output is not committed, so the page can link to the exact source

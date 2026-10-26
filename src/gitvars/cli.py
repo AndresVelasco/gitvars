@@ -1,6 +1,7 @@
 """Console commands; all user-facing output is sent to stdout."""
 
 import argparse
+from html import escape
 from pathlib import Path
 import sys
 
@@ -34,6 +35,7 @@ def build_parser() -> Parser:
         command.add_argument("--exclude", action="append", metavar="GLOB", help="Add a repository-relative exclusion glob")
         command.add_argument("--exclude-regex", action="append", metavar="REGEX", help="Add a regex exclusion against repository-relative paths")
         command.add_argument("--escape", action=argparse.BooleanOptionalAction, default=None, help="Recognize backslash escapes (default: enabled)")
+        command.add_argument("--html-escape", action="store_true", help="Escape inserted values for HTML text and quoted attributes")
         verbosity = command.add_mutually_exclusive_group()
         verbosity.add_argument("-v", "--verbose", action="store_true")
         verbosity.add_argument("-q", "--quiet", action="store_true")
@@ -82,7 +84,10 @@ def run(args, stats: Stats) -> int:
             text = original.decode("utf-8")
         except UnicodeDecodeError as exc:
             raise GitvarsError(f"Selected file is not valid UTF-8: {entry.source}; adjust include/exclude patterns") from exc
-        rendered, unavailable = renderer.render(text, snapshot.for_file(entry.relative))
+        values = snapshot.for_file(entry.relative)
+        if args.html_escape:
+            values = {name: escape(value) for name, value in values.items()}
+        rendered, unavailable = renderer.render(text, values)
         changed = rendered != text
         if changed:
             stats.changed += 1

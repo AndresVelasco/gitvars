@@ -250,6 +250,21 @@ class CLITests(unittest.TestCase):
         result = (self.root / "build/templates/a #ü.sql").read_text()
         self.assertEqual(result, f"{commit}|Test Author|Test Committer|2026-10-01T12:00:00+02:00|main|analytics|https://github.com/team/analytics/blob/{commit}/templates/a%20%23%C3%BC.sql")
 
+    def test_html_escape_is_opt_in_and_preserves_template_and_inserted_tokens(self):
+        self.write("page.html", '<code title="__git_commit_subject__">__git_commit_message__</code> &amp;')
+        self.commit('A <tag> & "quotes"\n\nLiteral __git_branch__')
+        self.cli("render", "page.html", "--output-dir", "build")
+        plain = (self.root / "build/page.html").read_text()
+        self.assertIn('A <tag> & "quotes"', plain)
+        preview = self.cli("render", "page.html", "--html-escape", "--dry-run")
+        self.assertIn("&lt;tag&gt; &amp; &quot;quotes&quot;", preview)
+        self.cli("check", "page.html", "--html-escape", expected=1)
+        self.cli("render", "page.html", "--html-escape", "--output-dir", "build", "-f")
+        rendered = (self.root / "build/page.html").read_text()
+        self.assertIn('title="A &lt;tag&gt; &amp; &quot;quotes&quot;"', rendered)
+        self.assertIn("Literal __git_branch__", rendered)
+        self.assertTrue(rendered.endswith("</code> &amp;"))
+
     def test_file_url_empty_for_untracked_and_absent_head_paths(self):
         self.write("tracked.sql", "original")
         self.commit()

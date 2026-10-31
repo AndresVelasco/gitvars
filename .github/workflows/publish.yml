@@ -84,7 +84,9 @@ jobs:
 
   tag:
     needs: build
-    if: needs.build.outputs.kind == 'release'
+    if: >-
+      !cancelled() && needs.build.result == 'success' &&
+      needs.build.outputs.kind == 'release'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -107,7 +109,9 @@ jobs:
 
   testpypi:
     needs: build
-    if: needs.build.outputs.kind == 'development'
+    if: >-
+      !cancelled() && needs.build.result == 'success' &&
+      needs.build.outputs.kind == 'development'
     runs-on: ubuntu-latest
     environment: testpypi
     permissions:
@@ -123,7 +127,9 @@ jobs:
 
   pypi:
     needs: [build, tag]
-    if: needs.build.outputs.kind == 'release'
+    if: >-
+      !cancelled() && needs.build.result == 'success' &&
+      needs.tag.result == 'success' && needs.build.outputs.kind == 'release'
     runs-on: ubuntu-latest
     environment: pypi
     permissions:

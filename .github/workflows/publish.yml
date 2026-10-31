@@ -1,0 +1,138 @@
+name: Publish
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Serialize version decisions and tag creation across commits and manual retries.
+concurrency:
+  group: package-publishing
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    if: >-
+      github.event_name != 'workflow_run' &&
+      (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
+    uses: ./.github/workflows/ci.yml
+
+  build:
+    needs: verify
+    if: >-
+      always() && (
+        (github.event_name == 'workflow_run' &&
+         github.event.workflow_run.conclusion == 'success' &&
+         github.event.workflow_run.event == 'push' &&
+         github.event.workflow_run.head_repository.full_name == github.repository) ||
+        (github.event_name != 'workflow_run' && needs.verify.result == 'success')
+      )
+    runs-on: ubuntu-latest
+    outputs:
+      kind: ${{ steps.plan.outputs.kind }}
+      version: ${{ steps.plan.outputs.version }}
+      tag: ${{ steps.plan.outputs.tag }}
+      sha: ${{ steps.plan.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          # workflow_run's default SHA may be newer than the commit CI tested.
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - uses: astral-sh/setup-uv@v9
+        with:
+          version: '0.8.17'
+      - run: uv sync --locked --extra demo
+      - name: Select version and registry
+        id: plan
+        env:
+          RELEASE_TAG: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
+        run: uv run --locked --extra demo python scripts/release.py --output "$GITHUB_OUTPUT"
+      - name: Set development version in this build checkout only
+        if: steps.plan.outputs.kind == 'development'
+        env:
+          BUILD_VERSION: ${{ steps.plan.outputs.version }}
+        run: uv version --no-sync "$BUILD_VERSION"
+      - run: uv build --no-sources
+      - name: Verify wheel and source distribution installations
+        env:
+          EXPECTED_VERSION: ${{ steps.plan.outputs.version }}
+        run: |
+          uv venv "$RUNNER_TEMP/package-smoke"
+          uv pip install --python "$RUNNER_TEMP/package-smoke/bin/python" --no-deps dist/*.whl
+          "$RUNNER_TEMP/package-smoke/bin/gitvars" --version
+          "$RUNNER_TEMP/package-smoke/bin/python" -c 'import os, gitvars; assert gitvars.__version__ == os.environ["EXPECTED_VERSION"]'
+          uv pip install --python "$RUNNER_TEMP/package-smoke/bin/python" --no-deps --reinstall dist/*.tar.gz
+          "$RUNNER_TEMP/package-smoke/bin/gitvars" --version
+          "$RUNNER_TEMP/package-smoke/bin/python" -c 'import os, gitvars; assert gitvars.__version__ == os.environ["EXPECTED_VERSION"]'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: distributions
+          path: dist/
+          if-no-files-found: error
+
+  tag:
+    needs: build
+    if: needs.build.outputs.kind == 'release'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.build.outputs.sha }}
+          fetch-depth: 0
+      - name: Create or verify the release tag
+        env:
+          RELEASE_TAG: ${{ needs.build.outputs.tag }}
+          RELEASE_SHA: ${{ needs.build.outputs.sha }}
+        run: |
+          if git show-ref --verify --quiet "refs/tags/$RELEASE_TAG"; then
+            test "$(git rev-parse "refs/tags/$RELEASE_TAG^{commit}")" = "$RELEASE_SHA"
+          else
+            git tag "$RELEASE_TAG" "$RELEASE_SHA"
+            git push origin "refs/tags/$RELEASE_TAG"
+          fi
+
+  testpypi:
+    needs: build
+    if: needs.build.outputs.kind == 'development'
+    runs-on: ubuntu-latest
+    environment: testpypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: distributions
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: https://test.pypi.org/legacy/
+
+  pypi:
+    needs: [build, tag]
+    if: needs.build.outputs.kind == 'release'
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: distributions
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          skip-existing: true

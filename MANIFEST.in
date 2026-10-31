@@ -1,3 +1,5 @@
 include .gitvars
+include uv.lock
 recursive-include demo *.html *.py
+recursive-include scripts *.py
 exclude demo/index.html

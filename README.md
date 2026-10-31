@@ -1,4 +1,4 @@
-# gitvars
+# gitvars-render
 
 `gitvars` exists so that ***your deployed assets can point back to their source.***
 
@@ -17,26 +17,27 @@ connection easier to follow when investigating an issue or understanding a
 deployment.
 
 The same idea works for Terraform resources, application configuration, and
-documentation. The [example page](https://andresvelasco.github.io/gitvars/) uses `gitvars` to fill in its
+documentation. The [example page](https://andresvelasco.github.io/gitvars-render/) uses `gitvars` to fill in its
 Git metadata at build time.
 
 ## Installation
 
-The Python package is named `gitvars` and installs the `gitvars` command. It
+The Python distribution is named `gitvars-render` and installs the `gitvars` command.
+The Python import remains `gitvars`. It
 requires Python 3.11+ and Git on `PATH`, with no runtime dependencies or network
 calls during rendering.
 
 Install the package from a source checkout into your Python environment,
-replacing `/path/to/gitvars` with the directory containing its `pyproject.toml`:
+replacing `/path/to/gitvars-render` with the directory containing its `pyproject.toml`:
 
 ```sh
-python -m pip install /path/to/gitvars
+python -m pip install /path/to/gitvars-render
 ```
 
 Once this project is published to PyPI, install its release by package name:
 
 ```sh
-python -m pip install gitvars
+python -m pip install gitvars-render
 ```
 
 ## Usage
@@ -285,15 +286,21 @@ routine logging. Dry-run diffs and errors remain visible with `--quiet`.
 ## Development and demo
 
 ```sh
-python -m pip install -e '.[demo]'
-python -m unittest discover -s tests -v
+uv sync --locked --extra demo
+uv run --locked --extra demo python -m unittest discover -s tests -v
 ```
+
+`uv.lock` is versioned so local development, CI, and demo builds use the same
+resolved dependencies. `--locked` fails if it needs updating. After changing
+dependencies, run `uv lock` and commit both `pyproject.toml` and `uv.lock`.
+The runtime package still has no dependencies; the default development group
+adds the version-comparison helper used by release automation.
 
 To build and preview the page locally:
 
 ```sh
-uv run --extra demo python demo/build.py
-uv run gitvars render demo/index.html --html-escape --output-dir build --force
+uv run --locked --extra demo python demo/build.py
+uv run --locked --extra demo gitvars render demo/index.html --html-escape --output-dir build --force
 ```
 
 | Path | Purpose |
@@ -325,13 +332,77 @@ On a push to `main`, the Pages workflow first runs `demo/build.py`, then invokes
 `gitvars render` to produce `build/demo/index.html`. It uploads **`build/demo/` as the
 Pages artifact**. That directory becomes the website root, so its `index.html`
 is the homepage. With the default project-site URL, it appears at
-[https://andresvelasco.github.io/gitvars/](https://andresvelasco.github.io/gitvars/),
+[https://andresvelasco.github.io/gitvars-render/](https://andresvelasco.github.io/gitvars-render/),
 without `build/demo/` in the URL. The workflow can also be run manually.
 
 Select **GitHub Actions** as the repository's Pages publishing source to enable
 deployment, following the [GitHub Pages workflow documentation](https://docs.github.com/en/pages/getting-started-with-github-pages/using-custom-workflows-with-github-pages).
 Generated output is not committed, so the page can link to the exact source
 commit without a self-referential SHA update.
+
+## Publishing releases
+
+The distribution on PyPI and TestPyPI is **`gitvars-render`**. The GitHub
+repository is `AndresVelasco/gitvars-render`; the executable and Python import
+remain `gitvars`. `pyproject.toml` is the single version source, and
+`gitvars --version` reads the installed distribution's metadata.
+
+The publishing workflow is `.github/workflows/publish.yml`:
+
+| Event | Result after successful checks |
+| --- | --- |
+| Pull request | Tests and distribution builds; no publishing. |
+| Push to `main` with no release tags yet | Publish a development build to TestPyPI. |
+| Push to `main` with an unchanged released version | Publish a development build to TestPyPI. |
+| Push to `main` with a version above the latest release tag | Create the matching `vMAJOR.MINOR.PATCH` tag and publish to PyPI. |
+| Push of a matching version tag | Verify the tag, version, and tests, then publish to PyPI. |
+
+With no existing release tags, the first successful `main` build publishes
+`0.1.0.dev...` to TestPyPI. After verifying that build, request the initial
+production release explicitly:
+
+```sh
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+This starts the production publishing workflow, including tests and a check that
+the tag matches the version in `pyproject.toml`. For subsequent releases, update
+the version instead:
+
+```sh
+uv version 0.1.1
+```
+
+Commit the updated `pyproject.toml` and `uv.lock`, preferably in a release PR,
+and merge into `main`. Release versions use stable `MAJOR.MINOR.PATCH` numbers.
+The workflow compares versions numerically, rejects version regressions and
+tag/version mismatches, and never moves an existing tag. It tags the commit CI
+actually tested, even if `main` has advanced. Tag creation and publishing are
+jobs in the same workflow, so no additional token is needed to trigger another
+workflow from an automated tag.
+
+After `v0.1.0`, ordinary pushes publish versions such as
+`0.1.1.dev1230001`: the next patch version plus a serial derived from the
+workflow run ID and attempt. Only the temporary build checkout gets this
+development version; it is not committed. Re-running a failed release on its
+tagged commit retries publishing and skips distributions already uploaded.
+Wheel and source distributions are installed and checked before publishing.
+
+Configure pending or existing trusted publishers separately on PyPI and
+TestPyPI, and create the corresponding GitHub environments:
+
+| Setting | PyPI | TestPyPI |
+| --- | --- | --- |
+| Project name | `gitvars-render` | `gitvars-render` |
+| Repository owner | `AndresVelasco` | `AndresVelasco` |
+| Repository name | `gitvars-render` | `gitvars-render` |
+| Workflow filename | `publish.yml` | `publish.yml` |
+| Environment | `pypi` | `testpypi` |
+
+Publishing uses OIDC trusted publishing; no PyPI API token is stored in GitHub.
+The first upload creates a project configured with a pending publisher. See
+the [PyPI trusted-publishing documentation](https://docs.pypi.org/trusted-publishers/).
 
 CI is configured to run the standard-library test suite on Python 3.11–3.14 on Linux, plus Python
 3.12 on Windows and macOS. The local implementation has been validated on Python

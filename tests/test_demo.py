@@ -105,7 +105,7 @@ class DemoTests(unittest.TestCase):
         page.feed(render_template(self.readme, self.shell))
         self.assertIn("#configuration", page.links)
         self.assertIn("configuration", page.ids)
-        self.assertIn("https://andresvelasco.github.io/gitvars/", page.links)
+        self.assertIn("https://andresvelasco.github.io/gitvars-render/", page.links)
 
     def test_missing_documented_variable_fails_instead_of_incomplete_table(self):
         readme = self.readme.replace("| `__git_commit__` | Full `HEAD` commit SHA |", "")
